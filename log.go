@@ -41,6 +41,9 @@ func init() {
 	/**/
 }
 
+type logger_init struct {
+}
+
 type Logger struct {
 	mux          sync.Mutex
 	outputs      []*os.File
