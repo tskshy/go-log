@@ -90,7 +90,8 @@ func (l *Logger) Output(prefix, logstr string, color int) error {
 	/*logstr format*/
 	var tfmt = now.Format(l.timeformat)
 
-	var _, file_name, line_number, ok = runtime.Caller(l.calldepth)
+	var pc, file_name, line_number, ok = runtime.Caller(l.calldepth)
+	var func_name = ""
 	if !ok {
 		return errors.New("runtime caller false.")
 	} else {
@@ -101,6 +102,7 @@ func (l *Logger) Output(prefix, logstr string, color int) error {
 			}
 		}
 	}
+	func_name = runtime.FuncForPC(pc).Name()
 
 	buf = append(buf, prefix...)
 	buf = append(buf, tfmt...)
@@ -108,28 +110,22 @@ func (l *Logger) Output(prefix, logstr string, color int) error {
 	buf = append(buf, file_name...)
 	buf = append(buf, ":"...)
 	buf = append(buf, strconv.Itoa(line_number)...)
+	buf = append(buf, " ["...)
+	buf = append(buf, func_name...)
+	buf = append(buf, "]"...)
 	buf = append(buf, " ▸ "...)
 	buf = append(buf, logstr...)
 
-	//var _, err = l.Write(&buf, now, color)
-	//write ...
-
-	for i, f := range l.outputs {
-		var fd = f.Fd()
-		var name = f.Name() //full name
-		var stat, stat_err = f.Stat()
-		if stat_err != nil {
-			return stat_err
-		}
-		var size = stat.Size()
-
+	var _, err = l.Write(&buf, now, color)
+	if err != nil {
+		return err
 	}
+
 	return nil
 }
 
 /*
- @param(color): terminal color
- @param(s)    : output string
+ return, FALSE (index + 1, error), SUCCESS (0, nil)
 */
 func (l *Logger) Write(b *[]byte, time time.Time, color int) (int, error) {
 	for i, f := range l.outputs {
@@ -149,14 +145,18 @@ func (l *Logger) Write(b *[]byte, time time.Time, color int) (int, error) {
 			}
 		} else {
 			if l.timeinterval > 0 && (time.Unix()-l.inittime.Unix() != 0) && (time.Unix()-l.inittime.Unix())%l.timeinterval == 0 {
-				var _ = f.Close()
-				var _ = os.Rename(name, fmt.Sprintf("%s.bak.%d", name, time.Unix))
-				var nf, _ = os.OpenFile(name, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0666)
-				l.outputs[i] = nf
-				f = nf
+				var bak_file_path = fmt.Sprintf("%s.bak.%d", name, time.Unix())
+				if !check_path_exists(bak_file_path) {
+					var _ = os.Rename(name, bak_file_path)
+					var file, err_open_file = os.OpenFile(name, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0666)
+					if err_open_file != nil {
+						return i + 1, err_open_file
+					}
+					var _ = f.Close()
+					l.outputs[i] = file
+					f = file
+				}
 			}
-
-			fmt.Println(f.Stat().Size())
 
 			final_buf = append(final_buf, *b...)
 		}
@@ -167,11 +167,25 @@ func (l *Logger) Write(b *[]byte, time time.Time, color int) (int, error) {
 		}
 	}
 
-	return len(l.outputs), nil
+	return 0, nil
 }
 
-func create_bak_file(old, new string) {
+func check_path_exists(path string) bool {
+	var _, err = os.Stat(path)
+	if err == nil {
+		return true
+	}
 
+	if os.IsExist(err) {
+		return true
+	}
+
+	return false
+}
+
+func CreateFile(path string) (*os.File, error) {
+	var file, err = os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0666)
+	return file, err
 }
 
 func (l *Logger) Debug(v ...interface{}) {
@@ -180,7 +194,7 @@ func (l *Logger) Debug(v ...interface{}) {
 		var s = fmt.Sprintln(v...)
 		var err = l.Output(prefix, s, TerminalColorGreen)
 		if err != nil {
-			fmt.Println(err.Error())
+			panic(err.Error())
 		}
 	}
 }
@@ -191,7 +205,7 @@ func (l *Logger) Info(v ...interface{}) {
 		var s = fmt.Sprintln(v...)
 		var err = l.Output(prefix, s, TerminalColorWhite)
 		if err != nil {
-			fmt.Println(err.Error())
+			panic(err.Error())
 		}
 	}
 }
@@ -202,7 +216,7 @@ func (l *Logger) Warn(v ...interface{}) {
 		var s = fmt.Sprintln(v...)
 		var err = l.Output(prefix, s, TerminalColorYellow)
 		if err != nil {
-			fmt.Println(err.Error())
+			panic(err.Error())
 		}
 	}
 }
@@ -213,7 +227,7 @@ func (l *Logger) Error(v ...interface{}) {
 		var s = fmt.Sprintln(v...)
 		var err = l.Output(prefix, s, TerminalColorRed)
 		if err != nil {
-			fmt.Println(err.Error())
+			panic(err.Error())
 		}
 
 		panic(s)
