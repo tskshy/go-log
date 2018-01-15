@@ -40,7 +40,7 @@ func Benchmark_Mylog(b *testing.B) {
 
 	var logger = NewLogger(fs, LevelDebug, "2006-01-02 15:04:05.000")
 
-	for i := 0; i < b.N; i++ {
+	for i := 0; i < 5000000; i++ {
 		logger.Debug("benchmark test测试")
 	}
 }

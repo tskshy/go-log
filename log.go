@@ -50,8 +50,10 @@ type Logger struct {
 	level        int
 	calldepth    int
 	timeformat   string
-	timeinterval int64 //unit: seconds
+	timeinterval int64
 	maxsize      int64
+
+	backtype string
 
 	inittime time.Time
 }
@@ -70,12 +72,23 @@ func NewLogger(f []*os.File, level int, timeformat string) *Logger {
 	}
 
 	return &Logger{
-		outputs:      f,
-		level:        level,
-		calldepth:    2,
-		timeformat:   timeformat,
+		outputs:    f,
+		level:      level,
+		calldepth:  2,
+		timeformat: timeformat,
+		/*
+			 timeinterval:
+			 n > 0: 单位秒
+				0 < n < 60 * 60 * 24，按照每n秒间隔备份日志文件
+				60 * 60 * 24 <= n < 60 * 60 * 24 * 7 按照每一天备份日志文件
+				60 * 60 * 24 * 7 <= n < 60 * 60 * 24 * 30 按照每一个月备份日志文件
+			 n < 0: 单位kb
+				按照每n kb备份日志文件
+
+		*/
 		timeinterval: 1, //当值大于0秒时，按间隔计算，否则按照文件大小计算
 		inittime:     time.Now(),
+		backtype:     "m",
 	}
 }
 
@@ -116,7 +129,7 @@ func (l *Logger) Output(prefix, logstr string, color int) error {
 	buf = append(buf, " ▸ "...)
 	buf = append(buf, logstr...)
 
-	var _, err = l.Write(&buf, now, color)
+	var _, err = l.Write(&buf, now, tfmt, color)
 	if err != nil {
 		return err
 	}
@@ -127,7 +140,7 @@ func (l *Logger) Output(prefix, logstr string, color int) error {
 /*
  return, FALSE (index + 1, error), SUCCESS (0, nil)
 */
-func (l *Logger) Write(b *[]byte, time time.Time, color int) (int, error) {
+func (l *Logger) Write(b *[]byte, time time.Time, timefmt string, color int) (int, error) {
 	for i, f := range l.outputs {
 		var fd = f.Fd()
 		var name = f.Name()
@@ -144,19 +157,80 @@ func (l *Logger) Write(b *[]byte, time time.Time, color int) (int, error) {
 				final_buf = append(final_buf, *b...)
 			}
 		} else {
-			if l.timeinterval > 0 && (time.Unix()-l.inittime.Unix() != 0) && (time.Unix()-l.inittime.Unix())%l.timeinterval == 0 {
-				var bak_file_path = fmt.Sprintf("%s.bak.%d", name, time.Unix())
-				if !check_path_exists(bak_file_path) {
-					var _ = os.Rename(name, bak_file_path)
-					var file, err_open_file = os.OpenFile(name, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0666)
-					if err_open_file != nil {
-						return i + 1, err_open_file
+			var bak = false
+			switch l.backtype {
+			case "size":
+				//file size
+			case "s":
+				//second
+				if timefmt[20:23] == "000" {
+					bak = true
+				}
+			case "m":
+				//minute
+				if timefmt[17:19] == "00" {
+					bak = true
+				}
+			case "h":
+				//hour
+				if timefmt[14:16] == "00" {
+					bak = true
+				}
+			case "D":
+				//day
+				if timefmt[11:13] == "00" {
+					bak = true
+				}
+			case "M":
+				//month
+				if timefmt[8:10] == "01" {
+					bak = true
+				}
+			case "Y":
+				//year
+				if timefmt[5:7] == "01" {
+					bak = true
+				}
+			default:
+				//pass
+			}
+
+			if bak {
+				var bak_name []byte
+				bak_name = append(bak_name, name...)
+				bak_name = append(bak_name, ".bak."...)
+				bak_name = append(bak_name, timefmt...)
+				var new_file, err = backup(name, string(bak_name))
+				if err != nil {
+					return i + 1, err
+				}
+
+				if new_file != nil {
+					var err_c = f.Close()
+					if err_c != nil {
+						return i + 1, err_c
 					}
-					var _ = f.Close()
-					l.outputs[i] = file
-					f = file
+
+					l.outputs[i] = new_file
+					f = new_file
 				}
 			}
+
+			/*
+				if l.timeinterval > 0 && (time.Unix()-l.inittime.Unix() != 0) && (time.Unix()-l.inittime.Unix())%l.timeinterval == 0 {
+					var bak_file_path = fmt.Sprintf("%s.bak.%d", name, time.Unix())
+					if !CheckPathExists(bak_file_path) {
+						var _ = os.Rename(name, bak_file_path)
+						var file, err_open_file = CreateFile(name)
+						if err_open_file != nil {
+							return i + 1, err_open_file
+						}
+						var _ = f.Close()
+						l.outputs[i] = file
+						f = file
+					}
+				}
+			*/
 
 			final_buf = append(final_buf, *b...)
 		}
@@ -170,7 +244,25 @@ func (l *Logger) Write(b *[]byte, time time.Time, color int) (int, error) {
 	return 0, nil
 }
 
-func check_path_exists(path string) bool {
+func backup(old_path string, new_path string) (*os.File, error) {
+	if !CheckPathExists(new_path) {
+		var err_rn = os.Rename(old_path, new_path)
+		if err_rn != nil {
+			return nil, err_rn
+		}
+
+		var new_file, err_nf = CreateFile(old_path)
+		if err_nf != nil {
+			return nil, err_nf
+		}
+
+		return new_file, nil
+	}
+
+	return nil, nil
+}
+
+func CheckPathExists(path string) bool {
 	var _, err = os.Stat(path)
 	if err == nil {
 		return true
