@@ -54,8 +54,6 @@ type Logger struct {
 	maxsize      int64
 
 	backtype string
-
-	inittime time.Time
 }
 
 func NewLogger(f []*os.File, level int, timeformat string) *Logger {
@@ -76,19 +74,7 @@ func NewLogger(f []*os.File, level int, timeformat string) *Logger {
 		level:      level,
 		calldepth:  2,
 		timeformat: timeformat,
-		/*
-			 timeinterval:
-			 n > 0: 单位秒
-				0 < n < 60 * 60 * 24，按照每n秒间隔备份日志文件
-				60 * 60 * 24 <= n < 60 * 60 * 24 * 7 按照每一天备份日志文件
-				60 * 60 * 24 * 7 <= n < 60 * 60 * 24 * 30 按照每一个月备份日志文件
-			 n < 0: 单位kb
-				按照每n kb备份日志文件
-
-		*/
-		timeinterval: 1, //当值大于0秒时，按间隔计算，否则按照文件大小计算
-		inittime:     time.Now(),
-		backtype:     "h",
+		backtype:   "m",
 	}
 }
 
@@ -129,7 +115,7 @@ func (l *Logger) Output(prefix, logstr string, color int) error {
 	buf = append(buf, " ▸ "...)
 	buf = append(buf, logstr...)
 
-	var _, err = l.Write(&buf, now, tfmt, color)
+	var _, err = l.Write(&buf, now, color)
 	if err != nil {
 		return err
 	}
@@ -140,7 +126,7 @@ func (l *Logger) Output(prefix, logstr string, color int) error {
 /*
  return, FALSE (index + 1, error), SUCCESS (0, nil)
 */
-func (l *Logger) Write(b *[]byte, time time.Time, timefmt string, color int) (int, error) {
+func (l *Logger) Write(b *[]byte, time time.Time, color int) (int, error) {
 	for i, f := range l.outputs {
 		var fd = f.Fd()
 		var name = f.Name()
@@ -157,50 +143,42 @@ func (l *Logger) Write(b *[]byte, time time.Time, timefmt string, color int) (in
 				final_buf = append(final_buf, *b...)
 			}
 		} else {
+			var hour, min, sec = time.Clock()
+			var _, month, day = time.Date()
+			var weekday = time.Weekday()
+
 			var bak = false
 			switch l.backtype {
 			case "size":
 				//file size
-			case "s":
-				//second
-				//begin ->
-				//millisecond
-				if timefmt[20:] == "000" {
-					bak = true
-				}
 			case "m":
 				//minute
-				//begin ->
-				//second
-				if timefmt[17:] == "00.000" {
+				if sec == 0 {
 					bak = true
 				}
 			case "h":
 				//hour
-				//begin ->
-				//minute
-				if timefmt[14:] == "00:00:000" {
+				if min == 0 && sec == 0 {
 					bak = true
 				}
 			case "D":
 				//day
-				//begin ->
-				//hour
-				if timefmt[11:] == "00:00:00.000" {
+				if hour == 0 && min == 0 && sec == 0 {
+					bak = true
+				}
+			case "W":
+				//weekday
+				if weekday.String() == "Sunday" && hour == 0 && min == 0 && sec == 0 {
 					bak = true
 				}
 			case "M":
 				//month
-				//begin ->
-				//day
-				if timefmt[8:] == "01 00:00:00.000" {
+				if day == 1 && hour == 0 && min == 0 && sec == 0 {
 					bak = true
 				}
 			case "Y":
 				//year
-				//begin ->
-				//month
-				if timefmt[5:] == "01-01 00:00:00.000" {
+				if month.String() == "January" && day == 1 && hour == 0 && min == 0 && sec == 0 {
 					bak = true
 				}
 			default:
@@ -211,7 +189,7 @@ func (l *Logger) Write(b *[]byte, time time.Time, timefmt string, color int) (in
 				var bak_name []byte
 				bak_name = append(bak_name, name...)
 				bak_name = append(bak_name, ".bak."...)
-				bak_name = append(bak_name, timefmt...)
+				bak_name = append(bak_name, time.Format("2006-01-02 15:04:05")...)
 				var new_file, err = backup(name, string(bak_name))
 				if err != nil {
 					return i + 1, err
