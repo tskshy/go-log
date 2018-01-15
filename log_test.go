@@ -23,6 +23,13 @@ func Test_Output(t *testing.T) {
 	//logger.Error("12", "asd")
 }
 
+func Test_FileSize(t *testing.T) {
+	var f, _ = os.OpenFile("/root/devel/golang/go-libs/src/go-log/LICENSE", os.O_APPEND|os.O_CREATE|os.O_RDWR, 0666)
+
+	var fi, _ = f.Stat()
+	t.Log(fi.Size())
+}
+
 /*
  go test go-log -v -test.bench Benchmark_Mylog
 
@@ -40,7 +47,7 @@ func Benchmark_Mylog(b *testing.B) {
 
 	var logger = NewLogger(fs, LevelDebug, "2006-01-02 15:04:05.000")
 
-	for i := 0; i < 5000000; i++ {
+	for i := 0; i < b.N; i++ {
 		logger.Debug("benchmark test测试")
 	}
 }

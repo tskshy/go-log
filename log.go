@@ -88,7 +88,7 @@ func NewLogger(f []*os.File, level int, timeformat string) *Logger {
 		*/
 		timeinterval: 1, //当值大于0秒时，按间隔计算，否则按照文件大小计算
 		inittime:     time.Now(),
-		backtype:     "m",
+		backtype:     "h",
 	}
 }
 
@@ -163,32 +163,44 @@ func (l *Logger) Write(b *[]byte, time time.Time, timefmt string, color int) (in
 				//file size
 			case "s":
 				//second
-				if timefmt[20:23] == "000" {
+				//begin ->
+				//millisecond
+				if timefmt[20:] == "000" {
 					bak = true
 				}
 			case "m":
 				//minute
-				if timefmt[17:19] == "00" {
+				//begin ->
+				//second
+				if timefmt[17:] == "00.000" {
 					bak = true
 				}
 			case "h":
 				//hour
-				if timefmt[14:16] == "00" {
+				//begin ->
+				//minute
+				if timefmt[14:] == "00:00:000" {
 					bak = true
 				}
 			case "D":
 				//day
-				if timefmt[11:13] == "00" {
+				//begin ->
+				//hour
+				if timefmt[11:] == "00:00:00.000" {
 					bak = true
 				}
 			case "M":
 				//month
-				if timefmt[8:10] == "01" {
+				//begin ->
+				//day
+				if timefmt[8:] == "01 00:00:00.000" {
 					bak = true
 				}
 			case "Y":
 				//year
-				if timefmt[5:7] == "01" {
+				//begin ->
+				//month
+				if timefmt[5:] == "01-01 00:00:00.000" {
 					bak = true
 				}
 			default:
@@ -215,22 +227,6 @@ func (l *Logger) Write(b *[]byte, time time.Time, timefmt string, color int) (in
 					f = new_file
 				}
 			}
-
-			/*
-				if l.timeinterval > 0 && (time.Unix()-l.inittime.Unix() != 0) && (time.Unix()-l.inittime.Unix())%l.timeinterval == 0 {
-					var bak_file_path = fmt.Sprintf("%s.bak.%d", name, time.Unix())
-					if !CheckPathExists(bak_file_path) {
-						var _ = os.Rename(name, bak_file_path)
-						var file, err_open_file = CreateFile(name)
-						if err_open_file != nil {
-							return i + 1, err_open_file
-						}
-						var _ = f.Close()
-						l.outputs[i] = file
-						f = file
-					}
-				}
-			*/
 
 			final_buf = append(final_buf, *b...)
 		}
