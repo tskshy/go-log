@@ -45,15 +45,14 @@ type logger_init struct {
 }
 
 type Logger struct {
-	mux          sync.Mutex
-	outputs      []*os.File
-	level        int
-	calldepth    int
-	timeformat   string
-	timeinterval int64
-	maxsize      int64
-
-	backtype string
+	mux        sync.Mutex
+	outputs    []*os.File
+	level      int
+	calldepth  int
+	timeformat string
+	maxsize    int64
+	inittime   time.Time
+	backuptype string
 }
 
 func NewLogger(f []*os.File, level int, timeformat string) *Logger {
@@ -72,9 +71,11 @@ func NewLogger(f []*os.File, level int, timeformat string) *Logger {
 	return &Logger{
 		outputs:    f,
 		level:      level,
-		calldepth:  2,
 		timeformat: timeformat,
-		backtype:   "m",
+		backuptype: "s",
+
+		calldepth: 2,
+		inittime:  time.Now(),
 	}
 }
 
@@ -144,53 +145,62 @@ func (l *Logger) Write(b *[]byte, time time.Time, color int) (int, error) {
 			}
 		} else {
 			var hour, min, sec = time.Clock()
-			var _, month, day = time.Date()
-			var weekday = time.Weekday()
+			var year, month, day = time.Date()
 
-			var bak = false
-			switch l.backtype {
+			var bak_path = ""
+
+			var bak_fmt = "%s.bak.%s"
+			switch l.backuptype {
 			case "size":
-				//file size
+				//file size TODO
+			case "s":
+				var _, _, l_sec = l.inittime.Clock()
+				if l_sec < sec {
+					bak_path = fmt.Sprintf(bak_fmt, name, l.inittime.Format("2006-01-02 15:04:05"))
+					l.inittime = time
+				}
 			case "m":
 				//minute
-				if sec == 0 {
-					bak = true
+				var _, l_min, _ = l.inittime.Clock()
+				if l_min < min {
+					bak_path = fmt.Sprintf(bak_fmt, name, l.inittime.Format("2006-01-02 15:04"))
+					l.inittime = time
 				}
 			case "h":
 				//hour
-				if min == 0 && sec == 0 {
-					bak = true
+				var l_hour, _, _ = l.inittime.Clock()
+				if l_hour < hour {
+					bak_path = fmt.Sprintf(bak_fmt, name, l.inittime.Format("2006-01-02 15"))
+					l.inittime = time
 				}
 			case "D":
 				//day
-				if hour == 0 && min == 0 && sec == 0 {
-					bak = true
-				}
-			case "W":
-				//weekday
-				if weekday.String() == "Sunday" && hour == 0 && min == 0 && sec == 0 {
-					bak = true
+				var _, _, l_day = l.inittime.Date()
+				if l_day < day {
+					bak_path = fmt.Sprintf(bak_fmt, name, l.inittime.Format("2006-01-02"))
+					l.inittime = time
 				}
 			case "M":
 				//month
-				if day == 1 && hour == 0 && min == 0 && sec == 0 {
-					bak = true
+				var _, l_month, _ = l.inittime.Date()
+				if l_month < month {
+					bak_path = fmt.Sprintf(bak_fmt, name, l.inittime.Format("2006-01"))
+					l.inittime = time
 				}
+
 			case "Y":
 				//year
-				if month.String() == "January" && day == 1 && hour == 0 && min == 0 && sec == 0 {
-					bak = true
+				var l_year, _, _ = l.inittime.Date()
+				if l_year < year {
+					bak_path = fmt.Sprintf(bak_fmt, name, l.inittime.Format("2006"))
+					l.inittime = time
 				}
 			default:
 				//pass
 			}
 
-			if bak {
-				var bak_name []byte
-				bak_name = append(bak_name, name...)
-				bak_name = append(bak_name, ".bak."...)
-				bak_name = append(bak_name, time.Format("2006-01-02 15:04:05")...)
-				var new_file, err = backup(name, string(bak_name))
+			if len(bak_path) > 0 {
+				var new_file, err = backup(name, string(bak_path))
 				if err != nil {
 					return i + 1, err
 				}
