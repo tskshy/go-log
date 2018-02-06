@@ -15,7 +15,7 @@ func Test_Output(t *testing.T) {
 		os.Stdout,
 	}
 
-	var logger = NewLogger(fs, LevelDebug, "2006-01-02 15:04:05.000")
+	var logger = NewLogger(fs, LevelDebug, "2006-01-02 15:04:05.000", "D", 0)
 
 	logger.Debug("12", "asd")
 	logger.Info("12", "asd")
@@ -45,7 +45,7 @@ func Benchmark_Mylog(b *testing.B) {
 		f,
 	}
 
-	var logger = NewLogger(fs, LevelDebug, "2006-01-02 15:04:05.000")
+	var logger = NewLogger(fs, LevelDebug, "2006-01-02 15:04:05.000", "D", 0)
 
 	for i := 0; i < b.N; i++ {
 		logger.Debug("benchmark test测试")

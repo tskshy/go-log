@@ -48,14 +48,15 @@ type Logger struct {
 	mux        sync.Mutex
 	outputs    []*os.File
 	level      int
-	calldepth  int
 	timeformat string
-	maxsize    int64
-	inittime   time.Time
 	backuptype string
+	maxsize    int64
+
+	calldepth int
+	inittime  time.Time
 }
 
-func NewLogger(f []*os.File, level int, timeformat string) *Logger {
+func NewLogger(f []*os.File, level int, timeformat string, backuptype string, size int64) *Logger {
 	if len(f) == 0 {
 		f = []*os.File{os.Stdout}
 	}
@@ -68,11 +69,20 @@ func NewLogger(f []*os.File, level int, timeformat string) *Logger {
 		timeformat = "2006-01-02 15:04:05.000"
 	}
 
+	if backuptype == "" {
+		backuptype = "D"
+	}
+
+	if size <= 0 {
+		size = 1024 * 1024 * 1024 * 50 //50 MB
+	}
+
 	return &Logger{
 		outputs:    f,
 		level:      level,
 		timeformat: timeformat,
-		backuptype: "s",
+		backuptype: backuptype,
+		maxsize:    size,
 
 		calldepth: 2,
 		inittime:  time.Now(),
@@ -112,8 +122,7 @@ func (l *Logger) Output(prefix, logstr string, color int) error {
 	buf = append(buf, strconv.Itoa(line_number)...)
 	buf = append(buf, " ["...)
 	buf = append(buf, func_name...)
-	buf = append(buf, "]"...)
-	buf = append(buf, " ▸ "...)
+	buf = append(buf, "] ▸ "...)
 	buf = append(buf, logstr...)
 
 	var _, err = l.Write(&buf, now, color)
@@ -152,7 +161,16 @@ func (l *Logger) Write(b *[]byte, time time.Time, color int) (int, error) {
 			var bak_fmt = "%s.bak.%s"
 			switch l.backuptype {
 			case "size":
-				//file size TODO
+				//file size
+				var file_info, fi_err = f.Stat()
+				if fi_err != nil {
+					return i + 1, fi_err
+				}
+
+				if file_info.Size() > l.maxsize {
+					//50MB
+					bak_path = fmt.Sprintf(bak_fmt, name, l.inittime.Format("2006-01-02 15:04:05"))
+				}
 			case "s":
 				var _, _, l_sec = l.inittime.Clock()
 				if l_sec < sec {
@@ -277,7 +295,7 @@ func (l *Logger) Debug(v ...interface{}) {
 
 func (l *Logger) Info(v ...interface{}) {
 	if l.level <= LevelInfo {
-		var prefix = "[Info] "
+		var prefix = "[INFO] "
 		var s = fmt.Sprintln(v...)
 		var err = l.Output(prefix, s, TerminalColorWhite)
 		if err != nil {
@@ -288,7 +306,7 @@ func (l *Logger) Info(v ...interface{}) {
 
 func (l *Logger) Warn(v ...interface{}) {
 	if l.level <= LevelWarn {
-		var prefix = "[Warn] "
+		var prefix = "[WARN] "
 		var s = fmt.Sprintln(v...)
 		var err = l.Output(prefix, s, TerminalColorYellow)
 		if err != nil {
@@ -299,7 +317,7 @@ func (l *Logger) Warn(v ...interface{}) {
 
 func (l *Logger) Error(v ...interface{}) {
 	if l.level <= LevelError {
-		var prefix = "[Error] "
+		var prefix = "[ERROR] "
 		var s = fmt.Sprintln(v...)
 		var err = l.Output(prefix, s, TerminalColorRed)
 		if err != nil {
